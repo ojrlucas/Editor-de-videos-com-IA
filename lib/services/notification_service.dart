@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -31,13 +30,9 @@ class NotificationService {
   int _id(int taskId, int slot) => taskId * 10 + slot;
 
   Future<void> init(void Function(NotificationResponse) onResponse) async {
+    // Os alarmes usam instantes absolutos (TZDateTime.from), então o fuso local
+    // do pacote `timezone` não altera o horário em que disparam.
     tzdata.initializeTimeZones();
-    try {
-      tz.setLocalLocation(
-          tz.getLocation(await FlutterTimezone.getLocalTimezone()));
-    } catch (_) {
-      tz.setLocalLocation(tz.getLocation('America/Sao_Paulo'));
-    }
 
     await _plugin.initialize(
       const InitializationSettings(
