@@ -130,11 +130,15 @@ class NotificationService {
     try {
       await _plugin.zonedSchedule(id, title, body, at, details,
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload);
     } on PlatformException {
       // Sem permissão de alarme exato: usa agendamento aproximado.
       await _plugin.zonedSchedule(id, title, body, at, details,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload);
     }
   }
