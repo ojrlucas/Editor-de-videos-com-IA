@@ -4,6 +4,9 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -24,3 +27,11 @@ jobs:
         with:
           name: prazo-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Publica o APK em uma release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk prazo.apk
+          gh release create "apk-${{ github.run_number }}" prazo.apk \
+            --prerelease --title "Prazo APK #${{ github.run_number }}" \
+            --notes "APK de teste gerado a partir de ${{ github.sha }}"
