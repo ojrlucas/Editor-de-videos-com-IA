@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:intl/intl.dart';
 
 String minutesLabel(int m) {
@@ -33,3 +35,11 @@ String fullDue(DateTime due) =>
     DateFormat("EEE, d 'de' MMM · HH:mm", 'pt_BR').format(due);
 
 DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+String newUid() {
+  final r = Random.secure();
+  return List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'))
+      .join();
+}
+
+int nowMs() => DateTime.now().millisecondsSinceEpoch;

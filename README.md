@@ -33,3 +33,30 @@ Sem Flutter instalado: o workflow `.github/workflows/build-apk.yml` compila o AP
 ## Primeiro uso
 Abra **Configurações → Testar ligação**, conceda as permissões (notificações, alarmes exatos, tela cheia)
 e bloqueie a tela. Em Xiaomi/Samsung/Huawei, desative a otimização de bateria para o app.
+
+
+## Três versões (APKs)
+
+| APK | Para quê | Rede |
+|---|---|---|
+| `prazo-normal.apk` | Celulares comuns. Várias contas, digital, tarefas. Pode ser pareado com o Dev. | Só a rede wi-fi local (nada de internet) |
+| `prazo-dev.apk` | O seu celular. Acha os celulares normais no wi-fi e sincroniza contas e tarefas. | Só a rede wi-fi local |
+| `prazo-online.apk` | Sincroniza pela internet com um servidor seu. | Internet (HTTPS) |
+
+Os três podem ficar instalados juntos (ids diferentes).
+
+### Sincronização na rede local (normal ↔ dev)
+1. No celular normal: Configurações → Sincronização → **Permitir um novo aparelho** (mostra um código de uso único, vale 5 min).
+2. No Dev: Sincronização → **Procurar** → Parear → digite o código. No normal, confirme o pedido.
+3. Pronto: contas, tarefas, categorias e exclusões ficam iguais nos dois. Mexeu em um, o outro atualiza em poucos segundos;
+   se um estiver fora da rede, sincroniza sozinho quando voltar. Em conflito vale a edição mais recente (confira se os relógios estão certos).
+
+Segurança: tudo é cifrado com AES-256-GCM; o código passa por PBKDF2 (100 mil iterações) e só serve para trocar uma
+chave aleatória de 256 bits; o código expira em 5 min, vale uma vez e trava após 5 erros; o dono do celular normal
+precisa aprovar; mensagens têm horário e são recusadas se repetidas; dá para revogar cada aparelho. O servidor só
+atende a rede local. A sincronização só roda com o app aberto (o Android pausa apps em segundo plano).
+
+### Versão online
+Suba `server/server.py` atrás de HTTPS (ex.: Caddy ou Cloudflare Tunnel):
+`python3 server/server.py --port 8080 --data ./dados`. No app: endereço `https://…` + uma frase secreta de 12+ caracteres,
+igual em todos os aparelhos. O servidor só guarda blocos cifrados; a frase nunca sai do celular.

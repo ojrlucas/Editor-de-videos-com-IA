@@ -5,6 +5,9 @@ import pathlib
 import re
 import sys
 
+edition = sys.argv[sys.argv.index("--edition") + 1] if "--edition" in sys.argv else "normal"
+labels = {"normal": "Prazo", "dev": "Prazo Dev", "online": "Prazo Online"}
+
 root = pathlib.Path(__file__).resolve().parent.parent / "android" / "app"
 manifest = root / "src" / "main" / "AndroidManifest.xml"
 if not manifest.exists():
@@ -23,6 +26,8 @@ if MARK not in m:
             "VIBRATE",
             "WAKE_LOCK",
             "USE_BIOMETRIC",
+            "INTERNET",
+            "ACCESS_NETWORK_STATE",
         ]
     )
     receivers = """
@@ -37,12 +42,16 @@ if MARK not in m:
         </receiver>
 """
     m = m.replace("<application", f"{MARK}\n{perms}\n    <application", 1)
-    m = re.sub(r'android:label="[^"]*"', 'android:label="Prazo"', m, count=1)
+    m = re.sub(r'android:label="[^"]*"', f'android:label="{labels[edition]}"', m, count=1)
     m = m.replace(
         "<activity",
         '<activity android:showWhenLocked="true" android:turnScreenOn="true"',
         1,
     )
+    if edition != "online":
+        # Na rede local o app fala HTTP simples, mas com o conteúdo cifrado (AES-256).
+        # A versão online só aceita https://.
+        m = re.sub(r"<application(\s)", r'<application android:usesCleartextTraffic="true"\1', m, count=1)
     m = m.replace("</application>", receivers + "    </application>", 1)
     manifest.write_text(m)
     print("AndroidManifest.xml ajustado")
@@ -76,3 +85,13 @@ for kt in (root / "src" / "main").rglob("MainActivity.kt"):
         t = t.replace(": FlutterActivity()", ": FlutterFragmentActivity()")
         kt.write_text(t)
         print("MainActivity ajustada")
+
+# Cada edição tem seu próprio applicationId, para poderem ficar instaladas juntas.
+for name in ("build.gradle.kts", "build.gradle"):
+    g = root / name
+    if g.exists():
+        t = g.read_text()
+        t = re.sub(r'applicationId\s*=?\s*"[^"]*"', f'applicationId = "br.com.prazo.{edition}"', t, count=1)
+        g.write_text(t)
+        print(f"applicationId = br.com.prazo.{edition}")
+        break

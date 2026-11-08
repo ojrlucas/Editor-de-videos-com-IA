@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/notification_service.dart';
+import 'sync_screen.dart';
 import '../services/task_store.dart';
 import '../utils.dart';
 
@@ -73,6 +74,15 @@ class SettingsScreen extends StatelessWidget {
                   },
                 ),
             ]),
+          ),
+          const Divider(height: 32),
+          ListTile(
+            leading: const Icon(Icons.sync),
+            title: const Text('Sincronização'),
+            subtitle: const Text('Contas e tarefas entre seus aparelhos'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const SyncScreen())),
           ),
           const Divider(height: 32),
           const _Header('Categorias'),

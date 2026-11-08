@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../edition.dart';
 import '../models/task.dart';
 import '../services/notification_service.dart';
 import '../services/task_store.dart';
@@ -138,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     hintText: 'Buscar tarefa…', border: InputBorder.none),
                 onChanged: (v) => setState(() => _query = v),
               )
-            : const Text('Prazo'),
+            : Text(appTitle),
         actions: [
           IconButton(
             icon: Icon(_searching ? Icons.close : Icons.search),

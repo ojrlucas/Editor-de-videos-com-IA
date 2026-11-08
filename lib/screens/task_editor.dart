@@ -139,6 +139,7 @@ class _TaskEditorState extends State<TaskEditor> {
       done: old?.done ?? false,
       doneAt: old?.doneAt,
       createdAt: old?.createdAt,
+      uid: old?.uid,
     );
     await store.upsert(task);
     if (mounted) Navigator.of(context).pop();

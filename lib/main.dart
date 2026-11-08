@@ -4,12 +4,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
+import 'edition.dart';
 import 'models/task.dart';
 import 'screens/call_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/task_editor.dart';
 import 'services/notification_service.dart';
 import 'services/task_store.dart';
+import 'sync/hub.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 late final TaskStore _store;
@@ -20,6 +22,31 @@ Future<void> main() async {
   await NotificationService.instance.init(_onNotification);
   _store = TaskStore();
   await _store.load();
+  await startSync(_store);
+  // Pedido de acesso de outro aparelho (versão normal): o dono precisa aprovar.
+  lanServer?.onPairRequest = (name) async {
+    final ctx = navigatorKey.currentState?.overlay?.context;
+    if (ctx == null) return false;
+    return await showDialog<bool>(
+          context: ctx,
+          barrierDismissible: false,
+          builder: (c) => AlertDialog(
+            title: const Text('Permitir acesso?'),
+            content: Text(
+                '“$name” quer sincronizar todas as suas contas e tarefas. '
+                'Só aceite se foi você que acabou de digitar o código.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('Negar')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: const Text('Permitir')),
+            ],
+          ),
+        ) ??
+        false;
+  };
 
   final launch = await NotificationService.instance.launchResponse();
   runApp(ChangeNotifierProvider.value(value: _store, child: const PrazoApp()));
@@ -73,7 +100,7 @@ class PrazoApp extends StatelessWidget {
           brightness: b,
         );
     return MaterialApp(
-      title: 'Prazo',
+      title: appTitle,
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
