@@ -97,9 +97,16 @@ def synth_google():
     return out
 
 def synth_arquivos(pasta):
+    """lê frase_0 ... frase_5 (wav/mp3/m4a/ogg/aac/flac), limpa ruído e nivela o volume com ffmpeg."""
     out = []
     for i in range(len(SCRIPT)):
-        x, sr = _read_wav(open(os.path.join(pasta, f"frase_{i}.wav"), "rb").read())
+        achados = [f for f in sorted(os.listdir(pasta)) if os.path.splitext(f)[0] == f"frase_{i}"]
+        if not achados: sys.exit(f"faltou o arquivo frase_{i}.* em {pasta}")
+        with tempfile.TemporaryDirectory() as td:
+            o = os.path.join(td, "o.wav")
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", os.path.join(pasta, achados[0]), "-ac", "1",
+                            "-ar", str(SR), "-af", "highpass=f=80,afftdn=nf=-30,loudnorm=I=-18:TP=-2:LRA=7", o], check=True)
+            x, sr = _read_wav(open(o, "rb").read())
         out.append(_resample(_trim(x), sr))
     return out
 
