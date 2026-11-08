@@ -1,0 +1,23 @@
+{
+  "name": "planeta-chuva-vidro",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo vertical de 25 s: O planeta onde chove vidro (HD 189733 b)",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "audio": "python3 scripts/build_audio.py",
+    "render": "remotion render src/index.ts PlanetaChuvaVidro ../output/planeta_chuva_vidro.mp4"
+  },
+  "dependencies": {
+    "@fontsource/montserrat": "^5.3.0",
+    "@fontsource/rajdhani": "^5.3.0",
+    "@remotion/cli": "^4.0.250",
+    "@types/react": "^18.3.31",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.250"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

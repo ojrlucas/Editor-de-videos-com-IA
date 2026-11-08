@@ -9,3 +9,8 @@ ios/
 .metadata
 *.iml
 .idea/
+video/node_modules/
+video/public/audio/narracao_bruta.wav
+video/public/audio/narracao_clonada_bruta.wav
+video/public/audio/mix_pre.wav
+video/public/audio/referencia_voz_usuario.wav
