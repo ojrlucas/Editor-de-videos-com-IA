@@ -42,7 +42,7 @@ class _TaskEditorState extends State<TaskEditor> {
     _due = t?.due ??
         DateTime(now.year, now.month, now.day, now.hour + 2);
     _priority = t?.priority ?? TaskPriority.medium;
-    _category = t?.category ?? defaultCategories.first;
+    _category = t?.category ?? s.categories.firstOrNull ?? 'Pessoal';
     _subs = t?.subtasks.map((e) => SubTask(e.title, done: e.done)).toList() ?? [];
     _reminders = {...(t?.reminders ?? s.defaultReminders)};
     _call = t?.callAlert ?? s.callByDefault;
@@ -83,6 +83,31 @@ class _TaskEditorState extends State<TaskEditor> {
       setState(() =>
           _due = DateTime(_due.year, _due.month, _due.day, t.hour, t.minute));
     }
+  }
+
+  Future<void> _newCategory() async {
+    final store = context.read<TaskStore>();
+    final c = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nova categoria'),
+        content: TextField(
+            controller: c,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Nome')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, c.text.trim()),
+              child: const Text('Adicionar')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    await store.addCategory(name);
+    setState(() => _category = name);
   }
 
   void _quick(DateTime d) => setState(() => _due = d);
@@ -136,9 +161,10 @@ class _TaskEditorState extends State<TaskEditor> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    // A categoria da própria tarefa continua aparecendo mesmo se foi removida da lista.
     final categories = {
-      ...defaultCategories,
-      if (!defaultCategories.contains(_category)) _category,
+      ...context.watch<TaskStore>().categories,
+      _category,
     }.toList();
 
     return Scaffold(
@@ -231,6 +257,11 @@ class _TaskEditorState extends State<TaskEditor> {
                   selected: _category == c,
                   onSelected: (_) => setState(() => _category = c),
                 ),
+              ActionChip(
+                avatar: const Icon(Icons.add, size: 18),
+                label: const Text('Nova'),
+                onPressed: _newCategory,
+              ),
             ]),
             const _Section('Lembretes'),
             Wrap(spacing: 8, children: [

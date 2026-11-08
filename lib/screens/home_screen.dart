@@ -7,6 +7,7 @@ import '../models/task.dart';
 import '../services/notification_service.dart';
 import '../services/task_store.dart';
 import '../utils.dart';
+import '../widgets/account_switcher.dart';
 import '../widgets/task_tile.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -97,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
     final categories = {
-      ...defaultCategories,
+      ...store.categories,
       ...store.tasks.map((t) => t.category),
     }.toList();
 
@@ -128,6 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leadingWidth: 52,
+        leading: const AccountButton(),
         title: _searching
             ? TextField(
                 autofocus: true,

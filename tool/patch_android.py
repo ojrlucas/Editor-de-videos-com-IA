@@ -22,6 +22,7 @@ if MARK not in m:
             "RECEIVE_BOOT_COMPLETED",
             "VIBRATE",
             "WAKE_LOCK",
+            "USE_BIOMETRIC",
         ]
     )
     receivers = """
@@ -65,3 +66,13 @@ for name, kts in (("build.gradle.kts", True), ("build.gradle", False)):
     g.write_text(t)
     print(f"{name} ajustado")
     break
+
+# local_auth exige FlutterFragmentActivity.
+for kt in (root / "src" / "main").rglob("MainActivity.kt"):
+    t = kt.read_text()
+    if "FlutterFragmentActivity" not in t:
+        t = t.replace("io.flutter.embedding.android.FlutterActivity",
+                      "io.flutter.embedding.android.FlutterFragmentActivity")
+        t = t.replace(": FlutterActivity()", ": FlutterFragmentActivity()")
+        kt.write_text(t)
+        print("MainActivity ajustada")

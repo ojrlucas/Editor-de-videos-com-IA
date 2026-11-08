@@ -11,6 +11,28 @@ class SettingsScreen extends StatelessWidget {
   static const _callOptions = [5, 10, 15, 30, 60];
   static const _reminderOptions = [1440, 120, 60, 30, 10, 0];
 
+  Future<void> _addCategory(BuildContext context, TaskStore s) async {
+    final c = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nova categoria'),
+        content: TextField(
+            controller: c,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Nome')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, c.text.trim()),
+              child: const Text('Adicionar')),
+        ],
+      ),
+    );
+    if (name != null) await s.addCategory(name);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.watch<TaskStore>();
@@ -51,6 +73,27 @@ class SettingsScreen extends StatelessWidget {
                   },
                 ),
             ]),
+          ),
+          const Divider(height: 32),
+          const _Header('Categorias'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 8, children: [
+              for (final c in s.categories)
+                InputChip(label: Text(c), onDeleted: () => s.removeCategory(c)),
+              ActionChip(
+                avatar: const Icon(Icons.add, size: 18),
+                label: const Text('Nova'),
+                onPressed: () => _addCategory(context, s),
+              ),
+            ]),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+                'Remover uma categoria só a tira da lista de opções. '
+                'As tarefas que já a usam (concluídas ou futuras) continuam como estão.',
+                style: TextStyle(fontSize: 12)),
           ),
           const Divider(height: 32),
           const _Header('Alertas'),
