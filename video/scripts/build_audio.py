@@ -46,6 +46,21 @@ def synth_narration(model, voices, voice, speed):
         print(f'  frase {i}: {len(a)/sr:.2f}s')
     return clips
 
+def animate(a, sr=24000, expr=1.5, lift=1.06):
+    """Deixa a fala mais viva: amplia a variação de entonação (F0) e eleva levemente o tom (WORLD)."""
+    import pyworld as pw
+    x = a.astype(np.float64)
+    f0, t = pw.harvest(x, sr, f0_floor=70, f0_ceil=400)
+    f0 = pw.stonemask(x, f0, t, sr)
+    sp = pw.cheaptrick(x, f0, t, sr); ap = pw.d4c(x, f0, t, sr)
+    v = f0 > 0
+    lf = np.log(f0[v]); m = lf.mean()
+    # suaviza o contorno e amplia os desvios em relação à média da frase
+    new = m + (lf - m) * expr + np.log(lift)
+    f0n = f0.copy(); f0n[v] = np.exp(new)
+    y = pw.synthesize(f0n, sp, ap, sr)
+    return (y / (np.abs(y).max() + 1e-9) * np.abs(a).max()).astype(np.float32)
+
 def resample(a, sr_in=24000, sr_out=SR):
     return signal.resample_poly(a, sr_out // np.gcd(sr_in, sr_out) , sr_in // np.gcd(sr_in, sr_out)).astype(np.float32)
 
@@ -199,11 +214,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', required=True); ap.add_argument('--voices', required=True)
     ap.add_argument('--clone-ref', default=None, help='WAV com a voz de referência: converte o timbre da narração (kNN-VC)')
-    ap.add_argument('--voice', default='pm_alex'); ap.add_argument('--speed', type=float, default=0.98)
+    ap.add_argument('--voice', default='pm_alex'); ap.add_argument('--speed', type=float, default=1.06)
+    ap.add_argument('--expr', type=float, default=1.8, help='intensidade da entonação (0 desliga)')
     a = ap.parse_args()
 
     print('Narração (Kokoro):')
     clips = synth_narration(a.model, a.voices, a.voice, a.speed)
+    if a.expr > 0: clips = [animate(c, 24000, a.expr) for c in clips]
 
     narr = np.zeros(N, np.float32)
     timeline_words, spans = [], []
