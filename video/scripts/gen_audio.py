@@ -230,7 +230,7 @@ def load_voice(name, t0):
 def narrator_fx(x):
     x = hp(x, 70)
     # realce de graves (corpo) e presença
-    low = lp(x, 180) * 0.55
+    low = lp(x, 180) * 0.3
     pres = bp(x, 2200, 4500) * 0.35
     y = x + low + pres
     # compressão simples
@@ -238,7 +238,7 @@ def narrator_fx(x):
     g = np.where(e > 0.12, (0.12 / e) ** 0.55, 1.0)
     g = lp(g, 40, 1)
     y = y * g
-    y = reverb(y, rt=1.2, mix=0.14, wet_lp=4000, seed=11)
+    y = reverb(y, rt=0.9, mix=0.07, wet_lp=4500, seed=11)
     return y / (np.max(np.abs(y)) + 1e-9) * 0.9
 
 
