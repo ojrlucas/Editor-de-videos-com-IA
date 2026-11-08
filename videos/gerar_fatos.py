@@ -100,6 +100,10 @@ def synth_kokoro():
         out.append(_trim(animar(x)) if alegre else x)
     return out
 
+def synth_xtts():                          # voz clonada a partir da amostra do usuário (ver voz_xtts.py)
+    import voz_xtts
+    return [_resample(_trim(x), sr) for x, sr in voz_xtts.sintetizar([f for f, _ in SCRIPT])]
+
 def synth_google():
     key = os.environ["GOOGLE_TTS_KEY"]; out = []
     voz = os.environ.get("GOOGLE_VOICE", "pt-BR-Neural2-B")
@@ -138,6 +142,7 @@ def atempo(a, f):                          # muda a velocidade sem mudar o tom
 
 VOZ = os.environ.get("VOZ", "espeak")
 if VOZ == "kokoro": clips = synth_kokoro()
+elif VOZ == "xtts": clips = synth_xtts()
 elif VOZ == "google": clips = synth_google()
 elif VOZ.startswith("arquivo:"): clips = synth_arquivos(VOZ.split(":", 1)[1])
 else: clips = synth_espeak()

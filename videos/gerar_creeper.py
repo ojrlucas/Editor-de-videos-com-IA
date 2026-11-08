@@ -63,6 +63,11 @@ def synth_all():
     return clips
 
 clips = synth_all()
+if os.environ.get("VOZ") == "xtts":                       # voz clonada (ver voz_xtts.py)
+    import voz_xtts
+    clips = [np.interp(np.arange(0, len(x), sr / SR), np.arange(len(x)), x).astype(np.float32)
+             for x, sr in voz_xtts.sintetizar([f for f, _ in SCRIPT])]
+    clips = [c[np.where(np.abs(c) > 0.01)[0][0]:np.where(np.abs(c) > 0.01)[0][-1] + 1] for c in clips]
 GAP = 0.22
 t = 0.35
 phr = []                                   # (início, fim)
