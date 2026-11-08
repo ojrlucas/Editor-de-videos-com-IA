@@ -15,3 +15,6 @@ videos/assets/
 
 # Gravações da voz do usuário (dados pessoais)
 videos/voz_amostra/
+
+__pycache__/
+*.pyc
