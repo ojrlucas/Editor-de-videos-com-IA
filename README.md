@@ -1,3 +1,23 @@
+# Vídeo "dark viral": a novidade de GTA 6 (25 s, 9:16)
+
+Saída: `output/gta6_novidade.mp4` — 1080×1920, 30 fps, H.264 (High) + AAC, **25,000 s**, pt-BR, sem música.
+
+**Notícia:** em 05/11/2026 a Rockstar divulgou ~37 novas imagens oficiais de GTA 6 a duas semanas do lançamento (19/11). Veja `SOURCES.md`.
+
+## Estrutura
+- `src/script_data.py` roteiro e janelas de tempo · `src/shots.py` decupagem (planos, zoom/pan, cortes)
+- `src/make_voice.py` narração · `src/make_audio.py` SFX + mix · `src/render.py` vídeo + legendas (`assets/subs/legendas.srt`)
+- `assets/images` imagens oficiais · `assets/audio` narração e SFX · `build_video.sh` roda tudo
+
+## Recriar
+`./build_video.sh` (requer ffmpeg, Pillow, numpy, espeak-ng, mbrola, mbrola-br1).
+
+## Limitações honestas
+- **Voz:** o ambiente não permitia serviços de TTS neural (pedido de liberação negado), então a voz é MBROLA/eSpeak: masculina e inteligível, mas **mais sintética do que o "natural/aveludada" pedido**. Para trocar, gere os `.wav` por trecho com um TTS melhor (ex.: Edge TTS `pt-BR-AntonioNeural`) e substitua em `make_voice.py`.
+- Não consegui ouvir o áudio; a verificação foi técnica (duração, loudness −15,9 LUFS, pico −4,5 dBFS, composição só voz+SFX).
+- Tempos das legendas por palavra são proporcionais ao tamanho da palavra (sem alinhamento forçado).
+- O primeiro quadro tem fade-in de ~0,2 s a partir do preto.
+- Contagem de imagens varia entre veículos (37/39/"quase 40").
 # Prazo — organizador de tarefas com prazo e alerta que "liga"
 
 App Flutter (Android em foco, iOS com notificações comuns) para tarefas **com data limite**.
