@@ -73,15 +73,31 @@ def synth_espeak():
         out.append(_resample(_trim(np.concatenate(buf).astype(np.float32) / 32768.0), rate))
     return out
 
+def animar(a, pitch=1.07):
+    """deixa a voz mais animada: tom um pouco mais agudo (sem mudar o ritmo), compressão e brilho nos agudos."""
+    with tempfile.TemporaryDirectory() as td:
+        i, o = os.path.join(td, "i.wav"), os.path.join(td, "o.wav")
+        with wave.open(i, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+            w.writeframes((np.clip(a, -1, 1) * 32767).astype(np.int16).tobytes())
+        af = (f"asetrate={SR * pitch:.0f},aresample={SR},atempo={1 / pitch:.4f},"
+              "equalizer=f=3200:t=q:w=1.2:g=4,equalizer=f=180:t=q:w=1:g=-2,"
+              "acompressor=threshold=-24dB:ratio=3:attack=5:release=80:makeup=5")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", i, "-af", af, o], check=True)
+        x, _ = _read_wav(open(o, "rb").read())
+    return x
+
 def synth_kokoro():
     from kokoro_onnx import Kokoro
     d = os.environ.get("KOKORO_DIR", "/tmp/kokoro")
     k = Kokoro(os.path.join(d, "kokoro-v1.0.onnx"), os.path.join(d, "voices-v1.0.bin"))
     voz = os.environ.get("KOKORO_VOICE", "pm_alex")      # pm_alex / pm_santa (masc.), pf_dora (fem.)
+    vel = float(os.environ.get("KOKORO_SPEED", "1.0")); alegre = os.environ.get("ANIMAR", "0") == "1"
     out = []
     for fala, _ in SCRIPT:
-        x, sr = k.create(fala, voice=voz, speed=1.0, lang="pt-br")
-        out.append(_resample(_trim(np.asarray(x, np.float32)), sr))
+        x, sr = k.create(fala, voice=voz, speed=vel, lang="pt-br")
+        x = _resample(_trim(np.asarray(x, np.float32)), sr)
+        out.append(_trim(animar(x)) if alegre else x)
     return out
 
 def synth_google():
