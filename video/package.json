@@ -1,0 +1,26 @@
+{
+  "name": "sua-voz-pode-ser-clonada",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo dark viral de 25s (Remotion) — Sua voz pode ser clonada.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "audio": "bash scripts/build_audio.sh",
+    "render": "bash scripts/render.sh",
+    "validate": "bash scripts/validate.sh",
+    "still": "remotion still src/index.ts DarkViral"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.250",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.250"
+  },
+  "devDependencies": {
+    "@fontsource/anton": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@types/react": "^18.3.31",
+    "typescript": "^5.6.3"
+  }
+}

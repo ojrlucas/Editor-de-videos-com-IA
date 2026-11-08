@@ -1,0 +1,4 @@
+node_modules/
+.tts/
+audio_src/*.tmp
+output/frames_check/

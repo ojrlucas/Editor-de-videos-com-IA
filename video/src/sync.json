@@ -1,0 +1,24 @@
+{
+  "fps": 30,
+  "duration": 25,
+  "voices": {
+    "n1a": 0.10, "n1b": 2.60, "n2": 4.10, "n3": 7.75,
+    "call": 11.90, "n5": 17.00, "n6a": 20.10, "n6b": 22.20
+  },
+  "scenes": { "s1": [0, 3], "s2": [3, 7], "s3": [7, 11], "s4": [11, 16], "s5": [16, 20], "s6": [20, 25] },
+  "events": {
+    "vibrate": [0.0, 0.55, 1.1, 1.65, 2.2],
+    "impact1": 2.55,
+    "glitch12": 3.0,
+    "fragmentStart": 3.5, "fragmentStep": 0.24, "fragmentCount": 14,
+    "scanStart": 7.3,
+    "ringIn": 11.0, "callConnect": 11.85,
+    "heartStart": 11.9,
+    "cut": 15.88,
+    "reveal": 16.0,
+    "textArtificial": 17.0,
+    "silenceStart": 18.95, "silenceEnd": 20.0,
+    "redWave": 20.0,
+    "finalHit": 24.72
+  }
+}
