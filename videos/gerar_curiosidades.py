@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Short 9:16 de 25 s: 3 curiosidades do Minecraft com sprites animados (fundo transparente).
+"""Short 9:16 de 25 s: 3 curiosidades do Minecraft com imagens REAIS do jogo animadas.
 
-Sprites pixel-art desenhados por código, efeitos (pop, brilho, glitch, partículas),
-voz espeak-ng offline, legendas palavra a palavra, música e SFX sintetizados.
-Uso: python3 gerar_curiosidades.py [saida.mp4]
+- Imagens: texturas reais do Minecraft (ver baixar_assets.sh), recortadas/montadas sem fundo.
+- Efeitos: pop, brilho, glitch, partículas, selos. Legendas palavra a palavra. Sem música de fundo.
+- Voz (VOZ=...): kokoro (neural offline, pt-BR), google (Cloud TTS, precisa GOOGLE_TTS_KEY),
+  arquivo:<pasta> (frase_0.wav ... gravadas por você) ou espeak (robótica, só reserva).
+Uso: [VOZ=kokoro] python3 gerar_curiosidades.py [saida.mp4]
 """
-import ctypes, math, random, subprocess, sys, wave, os
+import ctypes, math, random, subprocess, sys, wave, os, base64, json, io, tempfile, urllib.request
 import numpy as np
-import espeakng_loader
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "curiosidades_minecraft.mp4"
@@ -29,40 +30,92 @@ SCRIPT = [
     ("Segue pra mais curiosidades!", "SEGUE PRA MAIS CURIOSIDADES!"),
 ]
 
-# ---------------------------------------------------------------- voz (espeak)
-_lib = ctypes.CDLL(espeakng_loader.get_library_path())
-_lib.espeak_Initialize.restype = ctypes.c_int
-_RATE = _lib.espeak_Initialize(1, 0, espeakng_loader.get_data_path().encode(), 0)
-_buf = []
-_CB = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_short), ctypes.c_int, ctypes.c_void_p)
-def _cb(wav, n, ev):
-    if wav and n > 0: _buf.append(np.ctypeslib.as_array(wav, shape=(n,)).copy())
-    return 0
-_cbf = _CB(_cb)
-_lib.espeak_SetSynthCallback(_cbf)
-_lib.espeak_SetVoiceByName(b"pt-br")
-_lib.espeak_SetParameter(3, 38, 0)
+# ------------------------------------------------------------------------- voz
+def _resample(a, sr):
+    return a.astype(np.float32) if sr == SR else np.interp(
+        np.arange(0, len(a), sr / SR), np.arange(len(a)), a).astype(np.float32)
 
-def synth_all(wpm):
-    _lib.espeak_SetParameter(1, int(wpm), 0)
-    out = []
+def _trim(a):
+    idx = np.where(np.abs(a) > 0.01)[0]
+    return a[idx[0]:idx[-1] + 1]
+
+def _read_wav(data):
+    with wave.open(io.BytesIO(data)) as w:
+        sr, n = w.getframerate(), w.getnframes()
+        x = np.frombuffer(w.readframes(n), np.int16).astype(np.float32) / 32768.0
+        if w.getnchannels() > 1: x = x.reshape(-1, w.getnchannels()).mean(1)
+    return x, sr
+
+def synth_espeak():                       # reserva robótica
+    import espeakng_loader
+    lib = ctypes.CDLL(espeakng_loader.get_library_path()); lib.espeak_Initialize.restype = ctypes.c_int
+    rate = lib.espeak_Initialize(1, 0, espeakng_loader.get_data_path().encode(), 0)
+    buf = []; CB = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_short), ctypes.c_int, ctypes.c_void_p)
+    def cb(wav, n, ev):
+        if wav and n > 0: buf.append(np.ctypeslib.as_array(wav, shape=(n,)).copy())
+        return 0
+    keep = CB(cb); lib.espeak_SetSynthCallback(keep); lib.espeak_SetVoiceByName(b"pt-br")
+    lib.espeak_SetParameter(1, 175, 0); lib.espeak_SetParameter(3, 38, 0); out = []
     for fala, _ in SCRIPT:
-        _buf.clear(); b = fala.encode()
-        _lib.espeak_Synth(b, len(b) + 1, 0, 1, 0, 1, None, None); _lib.espeak_Synchronize()
-        a = np.concatenate(_buf).astype(np.float32) / 32768.0
-        idx = np.where(np.abs(a) > 0.01)[0]; a = a[idx[0]:idx[-1] + 1]
-        out.append(np.interp(np.arange(0, len(a), _RATE / SR), np.arange(len(a)), a).astype(np.float32))
+        buf.clear(); b = fala.encode()
+        lib.espeak_Synth(b, len(b) + 1, 0, 1, 0, 1, None, None); lib.espeak_Synchronize()
+        out.append(_resample(_trim(np.concatenate(buf).astype(np.float32) / 32768.0), rate))
     return out
 
-GAP, T0, VOICE_END = 0.32, 0.3, 23.6
-wpm = 190.0
-for _ in range(3):                      # ajusta a velocidade para caber nos 25 s
-    clips = synth_all(wpm)
-    speech = sum(len(c) for c in clips) / SR
-    target = VOICE_END - T0 - GAP * (len(clips) - 1)
-    wpm = min(300, max(130, wpm * speech / target))
-    if abs(speech - target) < 0.15: break
-clips = synth_all(wpm)
+def synth_kokoro():                       # voz neural offline (modelo ~300 MB, ver README)
+    from kokoro_onnx import Kokoro
+    d = os.environ.get("KOKORO_DIR", "/tmp/kokoro")
+    k = Kokoro(os.path.join(d, "kokoro-v1.0.onnx"), os.path.join(d, "voices-v1.0.bin"))
+    voz = os.environ.get("KOKORO_VOICE", "pm_alex")     # pm_alex / pm_santa (masc.), pf_dora (fem.)
+    out = []
+    for fala, _ in SCRIPT:
+        x, sr = k.create(fala, voice=voz, speed=1.0, lang="pt-br")
+        out.append(_resample(_trim(np.asarray(x, np.float32)), sr))
+    return out
+
+def synth_google():                       # Google Cloud Text-to-Speech (REST)
+    key = os.environ["GOOGLE_TTS_KEY"]; out = []
+    voz = os.environ.get("GOOGLE_VOICE", "pt-BR-Neural2-B")
+    for fala, _ in SCRIPT:
+        body = json.dumps({"input": {"text": fala}, "voice": {"languageCode": "pt-BR", "name": voz},
+                           "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 24000}}).encode()
+        rq = urllib.request.Request("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + key, body,
+                                    {"Content-Type": "application/json"})
+        x, sr = _read_wav(base64.b64decode(json.load(urllib.request.urlopen(rq))["audioContent"]))
+        out.append(_resample(_trim(x), sr))
+    return out
+
+def synth_arquivos(pasta):                # sua própria voz: frase_0.wav ... frase_4.wav
+    out = []
+    for i in range(len(SCRIPT)):
+        x, sr = _read_wav(open(os.path.join(pasta, f"frase_{i}.wav"), "rb").read())
+        out.append(_resample(_trim(x), sr))
+    return out
+
+def atempo(a, f):                         # acelera/desacelera sem mudar o tom
+    with tempfile.TemporaryDirectory() as td:
+        i, o = os.path.join(td, "i.wav"), os.path.join(td, "o.wav")
+        with wave.open(i, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+            w.writeframes((np.clip(a, -1, 1) * 32767).astype(np.int16).tobytes())
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", i, "-af", f"atempo={f:.4f}", o], check=True)
+        x, sr = _read_wav(open(o, "rb").read())
+    return x
+
+VOZ = os.environ.get("VOZ", "espeak")
+if VOZ == "kokoro": clips = synth_kokoro()
+elif VOZ == "google": clips = synth_google()
+elif VOZ.startswith("arquivo:"): clips = synth_arquivos(VOZ.split(":", 1)[1])
+else: clips = synth_espeak()
+
+T0, VOICE_END = 0.3, 23.6
+speech = sum(len(c) for c in clips) / SR
+budget = VOICE_END - T0 - 0.2 * (len(clips) - 1)         # no mínimo 0,2 s de pausa entre frases
+if speech > budget:                                       # cabe nos 25 s acelerando levemente
+    f = speech / budget
+    assert f < 1.45, f"fala longa demais ({speech:.1f}s); encurte o roteiro"
+    clips = [atempo(c, f) for c in clips]; speech = sum(len(c) for c in clips) / SR
+GAP = min(0.6, (VOICE_END - T0 - speech) / (len(clips) - 1))
 phr, t = [], T0
 for c in clips:
     d = len(c) / SR; phr.append((t, t + d)); t += d + GAP
@@ -96,20 +149,7 @@ def mix_audio(path):
     for c, (a, _) in zip(clips, phr):
         s = int(a * SR); voice[s:s + len(c)] += c
     voice /= max(0.01, np.abs(voice).max()) / 0.95
-    tt = np.arange(n) / SR; beat = 60 / 150; step = beat / 2
-    prog = [57, 53, 48, 55]; music = np.zeros(n, np.float32)
-    sq = lambda f, ph: np.sign(np.sin(2 * np.pi * f * ph))
-    for k in range(int(TOTAL / step) + 1):
-        ch = prog[(k // 8) % 4]; s0, s1 = int(k * step * SR), min(n, int((k + 1) * step * SR))
-        if s0 >= n: break
-        ph = tt[s0:s1] - k * step
-        bass = sq(440 * 2 ** ((ch - 12 - 69) / 12), tt[s0:s1]) * np.exp(-ph * 9) * 0.5
-        arp = [0, 4 if ch != 57 else 3, 7, 12][k % 4]
-        lead = sq(440 * 2 ** ((ch + 12 + arp - 69) / 12), tt[s0:s1]) * np.exp(-ph * 14) * 0.35
-        music[s0:s1] += (bass + lead).astype(np.float32)
-    music *= 0.10
-    env = np.convolve(np.abs(voice), np.ones(2205) / 2205, "same")
-    music *= (1 - 0.55 * np.clip(env * 6, 0, 1)).astype(np.float32)
+    # sem música de fundo: apenas voz + efeitos sonoros discretos
     sfx = np.zeros(n, np.float32)
     def put(t0, x):
         s = int(t0 * SR); x = x[:max(0, n - s)]
@@ -129,7 +169,7 @@ def mix_audio(path):
         put(T_COINS + 0.12 * k + rng.uniform(0, 0.05), sweep(1900, 2300, 0.12, 0.25, 22))
     for g in groups: put(g[0][1], sweep(1500, 1500, 0.05, 0.12, 60))
     for k, f in enumerate((523, 659, 784, 1047)): put(starts[4] + 0.1 * k, sweep(f, f, 0.2, 0.25, 9))
-    out = np.tanh((voice + music + sfx) * 1.1)
+    out = np.tanh((voice + sfx * 0.5) * 1.1)
     out = (out / max(1e-6, np.abs(out).max()) * 0.92 * 32767).astype(np.int16)
     with wave.open(path, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(out.tobytes())
@@ -143,65 +183,73 @@ def back(x):                                   # pop com overshoot
 def R(d, x, y, w, h, c): d.rectangle([x, y, x + w - 1, y + h - 1], fill=c)
 
 # ----------------------------------------------------------------------- sprites
-def spr_grass():
-    im = Image.new("RGBA", (16, 16), (0, 0, 0, 0)); d = ImageDraw.Draw(im); g = random.Random(5)
-    R(d, 0, 0, 16, 16, (121, 85, 58))
-    for _ in range(30): R(d, g.randrange(16), g.randrange(4, 16), 1, 1, g.choice(((97, 66, 44), (140, 100, 70))))
-    R(d, 0, 0, 16, 5, (98, 174, 62))
-    for x in range(16):
-        if g.random() < .5: R(d, x, 5, 1, g.randrange(1, 3), (98, 174, 62))
-    for _ in range(14): R(d, g.randrange(16), g.randrange(0, 5), 1, 1, g.choice(((76, 150, 48), (130, 205, 80))))
-    d.rectangle([0, 0, 15, 15], outline=(0, 0, 0, 90))
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "minecraft")
+def tex(name):
+    f = os.path.join(ASSETS, name)
+    if not os.path.exists(f): sys.exit("texturas ausentes: rode ./baixar_assets.sh")
+    return Image.open(f).convert("RGBA")
+
+def crop(im, x, y, w, h): return im.crop((x, y, x + w, y + h))
+
+def build_creeper():                      # vista frontal montada a partir da skin real
+    k = tex("skin_creeper.png"); im = Image.new("RGBA", (8, 26), (0, 0, 0, 0))
+    im.paste(crop(k, 8, 8, 8, 8), (0, 0)); im.paste(crop(k, 20, 20, 8, 12), (0, 8))
+    im.paste(crop(k, 4, 20, 4, 6), (0, 20)); im.paste(crop(k, 4, 20, 4, 6), (4, 20))
     return im
 
-def spr_pig():
-    im = Image.new("RGBA", (28, 18), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    for x in (2, 8, 16, 21): R(d, x, 13, 3, 5, (232, 130, 142))
-    R(d, 3, 4, 20, 10, (245, 160, 170)); R(d, 20, 3, 8, 9, (245, 160, 170)); R(d, 25, 7, 3, 4, (232, 126, 140))
-    R(d, 22, 5, 2, 2, (30, 30, 30)); R(d, 26, 8, 1, 1, (140, 60, 70))
+def build_enderman():
+    k = tex("skin_enderman.png"); e = tex("skin_enderman_eyes.png"); im = Image.new("RGBA", (12, 46), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im); dark = (14, 14, 18, 255)          # fundo escuro sob as texturas (a skin tem pixels vazados)
+    for box in ((2, 0, 9, 7), (2, 8, 9, 19), (0, 8, 1, 37), (10, 8, 11, 37), (3, 20, 4, 45), (7, 20, 8, 45)):
+        d.rectangle(box, fill=dark)
+    head = crop(k, 8, 8, 8, 8); head.alpha_composite(crop(e, 8, 8, 8, 8))
+    for part, pos in ((head, (2, 0)), (crop(k, 20, 20, 8, 12), (2, 8)), (crop(k, 58, 2, 2, 30), (0, 8)),
+                      (crop(k, 58, 2, 2, 30), (10, 8)), (crop(k, 58, 2, 2, 26), (3, 20)), (crop(k, 58, 2, 2, 26), (7, 20))):
+        im.alpha_composite(part, pos)
     return im
 
-def spr_creeper():
-    im = Image.new("RGBA", (16, 28), (0, 0, 0, 0)); d = ImageDraw.Draw(im); g = random.Random(3)
-    R(d, 2, 21, 5, 7, (60, 150, 52)); R(d, 9, 21, 5, 7, (60, 150, 52))
-    R(d, 4, 10, 8, 13, (72, 165, 60)); R(d, 1, 21, 4, 7, (66, 158, 56)); R(d, 11, 21, 4, 7, (66, 158, 56))
-    R(d, 3, 0, 10, 10, (84, 190, 70))
-    for _ in range(26): R(d, 3 + g.randrange(10), g.randrange(10), 2, 2, g.choice(((58, 140, 50), (110, 215, 90))))
-    R(d, 4, 2, 3, 3, (15, 30, 15)); R(d, 9, 2, 3, 3, (15, 30, 15))
-    R(d, 7, 5, 2, 5, (15, 30, 15)); R(d, 6, 7, 4, 3, (15, 30, 15))
+def build_pig_head():
+    k = tex("skin_pig.png"); im = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    im.paste(crop(k, 8, 8, 8, 8), (0, 0)); im.paste(crop(k, 17, 17, 4, 3), (2, 4))
     return im
 
-def spr_enderman():
-    im = Image.new("RGBA", (16, 44), (0, 0, 0, 0)); d = ImageDraw.Draw(im); k = (22, 22, 26)
-    R(d, 4, 24, 3, 20, k); R(d, 9, 24, 3, 20, k)                # pernas finas
-    R(d, 4, 10, 8, 14, (14, 14, 18))                            # torso
-    R(d, 1, 10, 2, 22, k); R(d, 13, 10, 2, 22, k)               # braços longos
-    R(d, 3, 0, 10, 10, k)                                       # cabeça
-    R(d, 3, 5, 10, 1, (8, 8, 10))
-    R(d, 4, 3, 3, 2, (255, 120, 255)); R(d, 9, 3, 3, 2, (255, 120, 255))   # olhos
-    R(d, 4, 3, 1, 2, (255, 255, 255)); R(d, 9, 3, 1, 2, (255, 255, 255))
-    return im
+def _face(texim, O, u, v, size):
+    """projeta a textura num paralelogramo (O + u*x/16 + v*y/16) sem suavização."""
+    M = np.array([[u[0], v[0]], [u[1], v[1]]], float) / texim.width
+    Mi = np.linalg.inv(M)
+    c = -Mi @ np.array(O, float)
+    return texim.transform(size, Image.AFFINE, (Mi[0, 0], Mi[0, 1], c[0], Mi[1, 0], Mi[1, 1], c[1]), Image.NEAREST)
 
-def spr_diamond():
-    im = Image.new("RGBA", (16, 16), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    d.polygon([(8, 1), (14, 6), (8, 15), (2, 6)], fill=(60, 220, 215))
-    d.polygon([(8, 1), (14, 6), (8, 7)], fill=(150, 250, 245)); d.polygon([(8, 1), (2, 6), (8, 7)], fill=(110, 240, 235))
-    d.polygon([(8, 7), (14, 6), (8, 15)], fill=(30, 170, 175)); d.polygon([(2, 6), (8, 7), (8, 15)], fill=(45, 195, 195))
-    d.line([(8, 1), (14, 6), (8, 15), (2, 6), (8, 1)], fill=(15, 90, 100))
-    R(d, 5, 4, 2, 1, (255, 255, 255))
-    return im
+def build_grass_cube(sz=480):
+    top = tex("block_grass_block_top.png"); side = tex("block_grass_block_side.png")
+    r, g, b, a = top.split()                                   # a textura do topo é cinza: aplica cor de bioma
+    top = Image.merge("RGBA", (r.point(lambda v: v * 124 // 255), g.point(lambda v: v * 189 // 255),
+                               b.point(lambda v: v * 107 // 255), a))
+    # a lateral real tem a franja de grama cinza no overlay: pinta a franja verde onde o pixel é cinza claro
+    px = side.load()
+    for y in range(side.height):
+        for x in range(side.width):
+            R, G, B, A = px[x, y]
+            if abs(R - G) < 6 and abs(G - B) < 6 and R > 90:
+                px[x, y] = (R * 124 // 255 + 20, G * 189 // 255 + 20, B * 107 // 255, A)
+    e = sz / 2 * 0.5
+    ex, ey, ez = (sz * 0.433, sz * 0.25), (-sz * 0.433, sz * 0.25), (0, sz * 0.5)
+    P0 = (sz * 0.433, 0); P3 = (P0[0] + ey[0], P0[1] + ey[1]); P1 = (P0[0] + ex[0], P0[1] + ex[1])
+    P2 = (P0[0] + ex[0] + ey[0], P0[1] + ex[1] + ey[1])
+    size = (int(sz * 0.866) + 1, int(sz * 0.5 + sz * 0.5) + 2)
+    out = Image.new("RGBA", size, (0, 0, 0, 0))
+    left = _face(side, P3, ex, ez, size); right = _face(side, P2, (-ey[0], -ey[1]), ez, size)
+    topf = _face(top, P0, ex, ey, size)
+    for im, k in ((left, 0.85), (right, 0.62)):
+        r, g, b, a = im.split(); im = Image.merge("RGBA", (r.point(lambda v: int(v * k)), g.point(lambda v: int(v * k)), b.point(lambda v: int(v * k)), a))
+        out.alpha_composite(im)
+    out.alpha_composite(topf)
+    return out
 
-def spr_coin():
-    im = Image.new("RGBA", (8, 8), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    R(d, 1, 0, 6, 8, (255, 200, 40)); R(d, 0, 1, 8, 6, (255, 200, 40)); R(d, 2, 1, 4, 6, (255, 230, 100))
-    R(d, 3, 2, 2, 4, (230, 160, 20))
-    return im
-
-def spr_pill(sz=(40, 14), c=(210, 40, 40)):
-    return None
-
-SP = dict(grass=spr_grass(), pig=spr_pig(), creeper=spr_creeper(), ender=spr_enderman(),
-          diamond=spr_diamond(), coin=spr_coin())
+SP = dict(grass=build_grass_cube(), pig=build_pig_head(), creeper=build_creeper(), ender=build_enderman(),
+          diamond=tex("item_diamond.png"), coin=tex("item_gold_ingot.png"), emerald=tex("item_emerald.png"),
+          gunpowder=tex("item_gunpowder.png"), pearl=tex("item_ender_pearl.png"), eye=tex("item_ender_eye.png"),
+          ore=tex("block_diamond_ore.png"))
 
 # ------------------------------------------------------------------ composição
 def place(big, spr, cx, cy, h, sx=1.0, sy=1.0, rot=0.0, alpha=1.0, glow=None, gi=0.9, tint=None):
@@ -232,6 +280,13 @@ def glitch(spr_img, amt, rng):
         dx = int(rng.uniform(-1, 1) * amt * 4) if rng.random() < min(1, amt) else 0
         out.alpha_composite(sl, (4 + dx, y)); y += sh
     return out
+
+def orbit(big, t, cx, cy, rx, ry, items, size, glow=None, vis=1.0, speed=1.4):
+    n = len(items)
+    for j, it in enumerate(items):
+        ang = t * speed + j * 2 * math.pi / n
+        place(big, SP[it], cx + math.cos(ang) * rx, cy + math.sin(ang) * ry, size * (0.8 + 0.2 * math.sin(ang)),
+              rot=math.sin(t * 3 + j) * 12, alpha=vis, glow=glow, gi=.6)
 
 def sparkles(d, t, cx, cy, rad, n, seed, cols=((255, 255, 255), (255, 226, 40), (120, 255, 200))):
     r = random.Random(seed)
@@ -361,19 +416,20 @@ def scene_effects(big, t, i):
         # porco -> glitch -> creeper
         pre = T_MORPH - 0.6
         if t < pre:
-            place(big, SP["pig"], CX, CY + 60 + bob * .5, 360, sx=appear, sy=appear, glow=(255, 150, 190), gi=.7)
+            place(big, SP["pig"], CX, CY + 40 + bob * .5, 420, sx=appear, sy=appear, glow=(255, 150, 190), gi=.7)
         elif t < T_MORPH + 0.5:
             k = ease((t - pre) / 0.6); amt = 1.5 if t < T_MORPH else 1.5 * (1 - (t - T_MORPH) / 0.5)
             src = SP["pig"] if t < T_MORPH else SP["creeper"]
-            h = 360 if t < T_MORPH else 560
+            h = 420 if t < T_MORPH else 640
             g = glitch(src, amt, rng)
             # "alongando" altura/largura durante a transição
             sx_, sy_ = (1 - 0.35 * k, 1 + 0.5 * k) if t < T_MORPH else (1, 1)
-            place(big, g, CX + rng.randint(-14, 14) * (amt > .3), CY + (60 if t < T_MORPH else 0), h, sx=sx_, sy=sy_,
+            place(big, g, CX + rng.randint(-14, 14) * (amt > .3), CY + (40 if t < T_MORPH else 0), h, sx=sx_, sy=sy_,
                   glow=(120, 255, 100), gi=.9 * k)
         else:
-            place(big, SP["creeper"], CX, CY + bob * .6, 560, sx=1 + .03 * math.sin(t * 6), sy=1,
+            place(big, SP["creeper"], CX, CY + bob * .6, 640, sx=1 + .03 * math.sin(t * 6), sy=1,
                   glow=(120, 255, 100), gi=.9)
+        if t > T_MORPH + 0.4: orbit(big, t, CX, CY - 40, 330, 120, ["gunpowder", "gunpowder", "gunpowder"], 130, glow=(160, 160, 160), vis=out)
         burst(d, t, T_MORPH, CX, CY, [(120, 255, 100), (255, 255, 255), (40, 160, 50)], seed=3)
         if t > pre - 0.3 and out > 0:
             k = back((t - (pre - 0.3)) / 0.35)
@@ -390,8 +446,9 @@ def scene_effects(big, t, i):
         for tb in T_BLINK:
             if tb - 0.12 <= t < tb + 0.3:
                 vis = 0 if rng.random() < 0.6 else 0.35
-        place(big, SP["ender"], pos, CY + 30 + bob * .3, 740, sx=appear, sy=appear, alpha=vis, glow=(255, 150, 255),
-              gi=1.1 + 0.5 * (math.sin(t * 9) > 0))
+        place(big, SP["ender"], pos, CY + 30 + bob * .3, 780, sx=appear, sy=appear, alpha=vis, glow=(210, 90, 255),
+              gi=0.55 + 0.3 * (math.sin(t * 9) > 0))
+        orbit(big, t, pos, CY + 30, 340, 130, ["eye", "pearl"], 130, glow=(220, 90, 255), vis=appear * out)
         for n, tb in enumerate(T_BLINK):
             src_x = CX if n == 0 else CX + 230
             dst_x = CX + 230 if n == 0 else CX - 160
@@ -410,6 +467,7 @@ def scene_effects(big, t, i):
         place(big, SP["diamond"], CX, CY + bob, 520, sx=(appear * (1 + .08 * math.sin(t * 4))), sy=appear,
               rot=math.sin(t * 2.2) * 9, glow=(60, 240, 230), gi=1.0)
         sparkles(d, t, CX, CY, 400, 18, 12, ((255, 255, 255), (150, 250, 245), (255, 226, 40)))
+        orbit(big, t, CX, CY, 360, 120, ["emerald", "ore"], 130, glow=(80, 255, 160), vis=appear, speed=-1.2)
         # chuva de moedas
         for n in range(22):
             r = random.Random(100 + n); t0 = T_COINS + r.uniform(0, 1.6); x = r.randrange(80, FW - 80)
@@ -417,7 +475,7 @@ def scene_effects(big, t, i):
             if 0 <= k < 2.2:
                 y = -60 + k * 900 + 0
                 wscale = abs(math.cos(k * 9 + n))
-                place(big, SP["coin"], x, y, 90, sx=max(.15, wscale), glow=(255, 200, 40), gi=.4)
+                place(big, SP["coin"], x, y, 110, rot=k * 260 + n * 40, glow=(255, 200, 40), gi=.4)
         if t > T_COINS - 0.3 and out > 0:
             k = back((t - (T_COINS - 0.3)) / 0.35)
             val = min(2.5, 2.5 * ease((t - T_COINS) / 1.6))
@@ -445,7 +503,7 @@ def main():
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     for fi in range(NF): p.stdin.write(render(fi).tobytes())
     p.stdin.close(); p.wait(); os.remove(wav)
-    print(f"ok: {OUT} ({DURATION}s, {NF} frames, voz {wpm:.0f} wpm, fala termina em {phr[-1][1]:.1f}s)")
+    print(f"ok: {OUT} ({DURATION}s, {NF} frames, voz {VOZ}, fala termina em {phr[-1][1]:.1f}s)")
 
 if __name__ == "__main__":
     main()

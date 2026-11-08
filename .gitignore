@@ -9,3 +9,6 @@ ios/
 .metadata
 *.iml
 .idea/
+
+# Texturas do Minecraft (propriedade da Mojang): baixe com videos/baixar_assets.sh
+videos/assets/
