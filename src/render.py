@@ -34,6 +34,8 @@ t_ = (yy / H)[..., None]
 grad[:] = np.array(PURPLE) * (1 - t_) + np.array(ORANGE) * t_
 scan = (1 - 0.06 * ((yy % 4) < 1))[..., None]
 rng = np.random.default_rng(1)
+_ty = (yy[:, :1] / H)[..., None]
+READ = (1 - 0.72 * np.clip(1 - _ty / 0.26, 0, 1) ** 1.6 - 0.80 * np.clip((_ty - 0.66) / 0.34, 0, 1) ** 1.3)
 
 # ---------- legendas: tempo por palavra ----------
 timing = json.load(open("build/work/timing.json"))
@@ -96,11 +98,11 @@ def headline(t):
     return [("QUAL TE CONVENCEU?", (255, 255, 255)), ("COMENTA AÍ 👇".replace(" 👇", ""), YEL)], 21.1
 
 def map_src(n, t, sx, sy, shot, ex):
-    """coordenada (sx,sy) em [0..1] da imagem -> pixel no frame, segundo camera do plano"""
+    """coordenada (sx,sy) em [0..1] da imagem -> pixel do frame 9:16, segundo a camera do plano"""
     z0, z1, p0, p1 = shot[3]; k = min(max((t - shot[1]) / (shot[2] - shot[1]), 0), 1); k = k * k * (3 - 2 * k)
-    z = (z0 + (z1 - z0) * k) * ex; side = 1080 / z; p = p0 + (p1 - p0) * k
-    cx = p * (1920 - side) + side / 2; cy = 540
-    return (sx * 1920 - (cx - side / 2)) * z, PY0 + (sy * 1080 - (cy - side / 2)) * z
+    z = (z0 + (z1 - z0) * k) * ex; ch = 1080 / z; cw = ch * 9 / 16; p = p0 + (p1 - p0) * k
+    cx = p * (1920 - cw) + cw / 2
+    return (sx * 1920 - (cx - cw / 2)) * (W / cw), (sy * 1080 - (540 - ch / 2)) * (H / ch)
 
 def render_frame(f):
     t = f / FPS
@@ -112,67 +114,36 @@ def render_frame(f):
     punch = 1 + 0.16 * (1 - pk) ** 2
     z0, z1, p0, p1 = shot[3]
     z = (z0 + (z1 - z0) * ke) * punch; p = p0 + (p1 - p0) * ke
-    side = 1080 / z; cx = p * (1920 - side) + side / 2
+    ch = 1080 / z; cw = ch * 9 / 16; cx = p * (1920 - cw) + cw / 2
     im = src[n]
-    box = (cx - side / 2, 540 - side / 2, cx + side / 2, 540 + side / 2)
-    panel = np.asarray(im.resize((W, PH), Image.BICUBIC, box=box)).astype(np.float32)
-    # fundo com parallax
-    b = bgs[n]; bh, bw = b.shape[:2]
-    zb = 1.0 + 0.12 * k
-    cw, ch = W / zb, H / zb
-    bx = (bw - cw) * (0.35 + 0.3 * p) ; by = (bh - ch) * 0.5
-    bgi = Image.fromarray(np.clip(b, 0, 255).astype(np.uint8)).resize((W, H), Image.BILINEAR, box=(bx, by, bx + cw, by + ch))
-    canvas = np.asarray(bgi).astype(np.float32)
-    # grade colorida no fundo
-    canvas = canvas * 0.8 + grad * 0.22
-    # whip: painel entra deslizando + aberracao cromatica
-    off = int(140 * (1 - pk) ** 2)
-    ca = int(16 * (1 - pk))
+    box = (cx - cw / 2, 540 - ch / 2, cx + cw / 2, 540 + ch / 2)
+    panel = np.asarray(im.resize((W, H), Image.LANCZOS, box=box).filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))).astype(np.float32)
+    ca = int(16 * (1 - pk)); off = int(140 * (1 - pk) ** 2)
     if ca:
         panel[:, :, 0] = np.roll(panel[:, :, 0], ca, axis=1); panel[:, :, 2] = np.roll(panel[:, :, 2], -ca, axis=1)
-    panel = panel * 1.06
-    # tint cinematografico no painel (rosa no alto, azul embaixo)
-    gp = np.linspace(0, 1, PH, dtype=np.float32)[:, None, None]
-    tint = np.array(PINK) * (1 - gp) * 0.10 + np.array(BLUE) * gp * 0.10
-    panel = np.clip(panel + tint - 8, 0, 255)
+    gp = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
+    panel = np.clip(panel * 1.05 + np.array(PINK) * (1 - gp) * 0.10 + np.array(BLUE) * gp * 0.10 - 8, 0, 255)
     if off: panel = np.roll(panel, off, axis=1)
-    sh = int(4 * math.sin(t * 41) * (1 - pk)) if shot is not SHOTS[0] else 0
-    canvas[PY0 + sh:PY0 + sh + PH] = panel[: PH - 0] if sh == 0 else np.roll(panel, 0, axis=0)
-    # sombra do painel sobre fundo
-    for i in range(30):
-        a = (1 - i / 30) ** 2 * 0.5
-        canvas[PY0 - 1 - i] *= (1 - a); canvas[PY0 + PH + i] *= (1 - a)
-    # linhas neon do painel
-    for yv, col in ((PY0 - 3, PINK), (PY0 + PH, BLUE)):
-        canvas[yv:yv + 3] = col
+    canvas = panel * READ
     canvas *= vig * scan
     # ----- elementos graficos sobre o painel -----
     if shot[0] == 7:                                    # anel de destaque na cabeça do Jason
         a = ease_out((t - 16.7) / 0.5)
         if a > 0:
             px, py = map_src(n, t, 0.60, 0.235, shot, 1)
-            ring = Image.new("RGBA", (W, PH + 400), (0, 0, 0, 0)); d = ImageDraw.Draw(ring)
+            ring = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(ring)
             r = 150 * a * (1 + 0.04 * math.sin(t * 9))
-            ccx, ccy = px, py - (PY0 - 200)
+            ccx, ccy = px, py
             d.ellipse([ccx - r, ccy - r, ccx + r, ccy + r], outline=YEL + (255,), width=8)
             for ang in range(0, 360, 90):
                 u = math.radians(ang + t * 90)
                 d.line([ccx + math.cos(u) * (r + 8), ccy + math.sin(u) * (r + 8), ccx + math.cos(u) * (r + 36), ccy + math.sin(u) * (r + 36)], fill=YEL + (255,), width=8)
-            paste(canvas, ring, 0, PY0 - 200)
+            paste(canvas, ring, 0, 0)
             lab = text_layer((760, 170), [("SEM CAPACETE", 380, 55, font(64, True), YEL + (255,), "mm", 6), ("segundo a Top Gear", 380, 125, font(34), (255, 255, 255, 255), "mm", 4)])
             s = back((t - 17.1) / 0.45)
             if s > 0:
                 l2, ox, oy = scale_layer(lab, max(s, 0.01))
-                paste(canvas, l2, 160 + ox, PY0 + 840 + oy, min(1, (t - 17.1) / 0.2))
-    # barra “live” + cabecalho
-    head = Image.new("RGBA", (W, 330), (0, 0, 0, 0)); hd = ImageDraw.Draw(head)
-    hd.rounded_rectangle([40, 60, 330, 130], 12, fill=PINK + (255,))
-    hd.text((185, 95), "GAMES DARK", font=font(34, True), fill=(255, 255, 255, 255), anchor="mm")
-    hd.rounded_rectangle([345, 60, 780, 130], 12, fill=(15, 8, 30, 220), outline=PURPLE + (255,), width=3)
-    hd.text((562, 95), "GTA VI • NOTÍCIA", font=font(32, True), fill=(255, 255, 255, 255), anchor="mm")
-    dot = 0.5 + 0.5 * math.sin(t * 6)
-    hd.ellipse([835, 80, 865, 110], fill=(255, int(60 + 60 * dot), 60, 255)); hd.text((1040, 95), "05 NOV", font=font(30, True), fill=(255, 255, 255, 255), anchor="rm")
-    paste(canvas, head, 0, 0, ease_out(t / 0.4))
+                paste(canvas, l2, 160 + ox, 1250 + oy, min(1, (t - 17.1) / 0.2))
     # headline animada (por cena)
     lines, t0 = headline(t); lt = t - t0
     hl = Image.new("RGBA", (W, 260), (0, 0, 0, 0))
@@ -183,7 +154,7 @@ def render_frame(f):
         if s > 0.02:
             l2, ox, oy = scale_layer(l, s); paste_lay = Image.new("RGBA", (W, 260), (0, 0, 0, 0)); paste_lay.paste(l2, (ox, 20 + i * 100 + oy), l2)
             hl = Image.alpha_composite(hl, Image.eval(paste_lay, lambda v: v)) if al >= 1 else Image.alpha_composite(hl, paste_lay)
-    paste(canvas, hl, 0, 165)
+    paste(canvas, hl, 0, 150)
     # contador "37" (cena de contexto)
     if 3.0 <= t < 8.1:
         ct = t - 3.0
@@ -194,24 +165,24 @@ def render_frame(f):
                                           ("NOVAS", 490, 85, font(60, True), (255, 255, 255, 255), "mm", 5),
                                           ("IMAGENS", 490, 160, font(60, True), (255, 255, 255, 255), "mm", 5),
                                           ("INÉDITAS", 490, 235, font(60, True), PINK + (255,), "mm", 5)])
-            b2, ox, oy = scale_layer(big, s); paste(canvas, b2, 40 + ox, PY0 + 30 + oy, min(1, ct / 0.15))
+            b2, ox, oy = scale_layer(big, s); paste(canvas, b2, 40 + ox, 470 + oy, min(1, ct / 0.15))
     if 6.5 <= t < 8.1:
         al = ease_out((t - 6.5) / 0.3)
         c = text_layer((820, 110), [("LANÇAMENTO: 19 NOV 2026", 410, 55, font(54, True), (255, 255, 255, 255), "mm", 5)])
         bg = Image.new("RGBA", (860, 120), (0, 0, 0, 0)); ImageDraw.Draw(bg).rounded_rectangle([0, 0, 859, 119], 18, fill=(10, 4, 25, 200), outline=ORANGE + (255,), width=4)
-        bg.paste(c, (20, 5), c); paste(canvas, bg, 110, PY0 + PH - 170, al)
+        bg.paste(c, (20, 5), c); paste(canvas, bg, 110, 1290, al)
     if t >= 23.1:
         al = ease_out((t - 23.2) / 0.35)
         bg = Image.new("RGBA", (900, 100), (0, 0, 0, 0)); d = ImageDraw.Draw(bg)
         d.rounded_rectangle([0, 0, 899, 99], 18, fill=(10, 4, 25, 205), outline=PINK + (255,), width=4)
         d.text((450, 50), "PS5 • XBOX SERIES X|S • 19 NOV", font=font(44, True), fill=(255, 255, 255, 255), anchor="mm")
-        paste(canvas, bg, 90, PY0 + PH - 150, al)
+        paste(canvas, bg, 90, 1300, al)
     if 19.1 <= t < 21.1:
         al = ease_out((t - 19.2) / 0.3)
         bg = Image.new("RGBA", (900, 100), (0, 0, 0, 0)); d = ImageDraw.Draw(bg)
         d.rounded_rectangle([0, 0, 899, 99], 18, fill=(10, 4, 25, 205), outline=BLUE + (255,), width=4)
         d.text((450, 50), "ROSTOS COM DETALHE ABSURDO", font=font(44, True), fill=(255, 255, 255, 255), anchor="mm")
-        paste(canvas, bg, 90, PY0 + PH - 150, al)
+        paste(canvas, bg, 90, 1300, al)
     # legendas (max 2 linhas)
     cur = next((c for c in chunks if c[0] <= t < c[1]), None)
     if cur:
@@ -230,10 +201,10 @@ def render_frame(f):
                 d.text((x, y), w[0], font=sf, fill=col + (255,), anchor="lm", stroke_width=10, stroke_fill=(8, 3, 18, 255))
                 x += dummy.textlength(w[0] + " ", sf)
         s = back(ct / 0.18, 2.2); s = max(s, 0.5)
-        l2, ox, oy = scale_layer(lay, s); paste(canvas, l2, ox, 1560 + oy, min(1, ct / 0.08))
+        l2, ox, oy = scale_layer(lay, s); paste(canvas, l2, ox, 1470 + oy, min(1, ct / 0.08))
     # credito + progresso
     cred = text_layer((W, 60), [("Imagens: Rockstar Games (galeria oficial) • via Push Square", W // 2, 30, font(26), (225, 220, 240, 255), "mm", 3)])
-    paste(canvas, cred, 0, 1815, 0.9)
+    paste(canvas, cred, 0, 1835, 0.9)
     canvas[1905:1915, :int(W * t / DURATION)] = np.array(PINK) * (1 - xx[1905:1915, :int(W * t / DURATION), None] / W) + np.array(ORANGE) * (xx[1905:1915, :int(W * t / DURATION), None] / W)
     # flash no corte + grao
     if shot is not SHOTS[0] and tl < 0.2:

@@ -13,7 +13,7 @@ Saída: `output/gta6_novidade.mp4` — 1080×1920, 30 fps, H.264 (High) + AAC, *
 `./build_video.sh` (requer ffmpeg, Pillow, numpy, espeak-ng, mbrola, mbrola-br1).
 
 ## Limitações honestas
-- **Voz:** o ambiente não permitia serviços de TTS neural (pedido de liberação negado), então a voz é MBROLA/eSpeak: masculina e inteligível, mas **mais sintética do que o "natural/aveludada" pedido**. Para trocar, gere os `.wav` por trecho com um TTS melhor (ex.: Edge TTS `pt-BR-AntonioNeural`) e substitua em `make_voice.py`.
+- **Voz:** Piper (neural, masculina pt-BR). A clonagem da voz do autor (`assets/voice/referencia_16k.wav`) está pendente de autorização de ferramenta.
 - Não consegui ouvir o áudio; a verificação foi técnica (duração, loudness −15,9 LUFS, pico −4,5 dBFS, composição só voz+SFX).
 - Tempos das legendas por palavra são proporcionais ao tamanho da palavra (sem alinhamento forçado).
 - O primeiro quadro tem fade-in de ~0,2 s a partir do preto.

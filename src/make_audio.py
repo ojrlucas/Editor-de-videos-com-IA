@@ -50,8 +50,8 @@ wav("assets/audio/narracao_raw.wav", voice)
 wav("assets/audio/sfx.wav", sfx)
 # processamento de voz via ffmpeg: graves quentes, corte de agudos ásperos, compressão, eco curto
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "assets/audio/narracao_raw.wav", "-af",
-    "highpass=f=70,equalizer=f=140:t=q:w=1.0:g=4,equalizer=f=3200:t=q:w=1.5:g=-3,lowpass=f=9500,"
-    "acompressor=threshold=-20dB:ratio=3:attack=5:release=80:makeup=3,aecho=0.8:0.88:35:0.12",
+    "highpass=f=70,equalizer=f=140:t=q:w=1.0:g=4,equalizer=f=3200:t=q:w=1.5:g=2.5,lowpass=f=10500,"
+    "acompressor=threshold=-20dB:ratio=3:attack=5:release=80:makeup=3,aecho=0.8:0.9:28:0.08",
     "-ar", "48000", "assets/audio/narracao.wav"], check=True)
 v = np.frombuffer(open("assets/audio/narracao.wav", "rb").read()[44:], dtype=np.int16).astype(np.float32) / 32768
 v = np.pad(v, (0, max(0, N - len(v))))[:N]
